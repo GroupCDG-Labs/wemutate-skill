@@ -1,0 +1,6 @@
+{
+  "name": "wemutate",
+  "version": "0.1.0",
+  "description": "Multi-language mutation testing: one skill, one vocabulary — Java (Maven/Gradle), JS/TS, C/C++. Built on PiTest, Stryker and Mull.",
+  "author": { "name": "CloudDev" }
+}
