@@ -6,16 +6,18 @@ Resolution order:
      plugin (bundled-install case);
   2. a previously downloaded engine cached under ~/.wemutate/engines/<version>/;
   3. otherwise, download from the registry: GET <server>/v1/resolve for this
-     platform+python (token-gated), verify the SHA-256, extract to the cache,
-     and use that.
+     platform+python (needs an account token — the skill's signup flow
+     creates one free during the beta), verify the SHA-256, extract to the
+     cache, and use that.
 
 So a *thin* skill (no engine shipped) fetches its engine on first run and
 reuses it thereafter (works offline once cached). A bundled install just uses
 its vendored engine and never calls the registry.
 
 Registry config comes from (in order): --server/--token flags, the
-WEMUTATE_REGISTRY / WEMUTATE_TOKEN env vars, or the project's
-.wemutate/sync.json (written by sync.py enable).
+WEMUTATE_REGISTRY / WEMUTATE_TOKEN env vars, ~/.wemutate/credentials.json
+(written by signup.py), or the project's .wemutate/sync.json (written by
+sync.py enable). The server defaults to the production registry.
 
 Usage:
   resolve_engine.py ADAPTER [--platform P] [--python X.Y]
@@ -40,6 +42,10 @@ from pathlib import Path
 ADAPTERS = {"jvm-maven", "jvm-gradle", "js-ts", "c-cpp", "python"}
 PLANNED = {"rust"}
 CACHE = Path.home() / ".wemutate" / "engines"
+CREDENTIALS = Path.home() / ".wemutate" / "credentials.json"
+# Production registry by default, matching sync.py — a thin install works
+# without any configuration (override with --server / WEMUTATE_REGISTRY).
+DEFAULT_SERVER = "https://wemutate.dev"
 
 
 def _has_engine(p: Path) -> bool:
@@ -73,16 +79,19 @@ def cached_home() -> Path | None:
 def registry_config(project_root: Path, server_arg, token_arg):
     server = server_arg or os.environ.get("WEMUTATE_REGISTRY")
     token = token_arg or os.environ.get("WEMUTATE_TOKEN")
-    cfg = project_root / ".wemutate" / "sync.json"
-    if cfg.is_file():
-        data = json.loads(cfg.read_text())
-        server = server or data.get("server")
-        token = token or data.get("token")
-    return server, token
+    for cfg in (CREDENTIALS, project_root / ".wemutate" / "sync.json"):
+        if cfg.is_file():
+            data = json.loads(cfg.read_text())
+            server = server or data.get("server")
+            token = token or data.get("token")
+    return server or DEFAULT_SERVER, token
 
 
-def _get(url: str, token: str, timeout: int) -> bytes:
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+def _get(url: str, token: str | None, timeout: int) -> bytes:
+    headers = {"User-Agent": "wemutate-skill/0.1.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
@@ -94,7 +103,10 @@ def download(server: str, token: str, plat: str, py: str) -> tuple[Path, dict]:
     dl = meta["url"]
     if dl.startswith("/"):
         dl = server + dl
-    blob = _get(dl, token, 180)
+    # Presigned/public store URLs carry their own auth in the query string;
+    # S3-style endpoints reject a request that also has an Authorization
+    # header (400). Only the service's own /v1/engine path needs the token.
+    blob = _get(dl, token if dl.startswith(server) else None, 180)
     got = hashlib.sha256(blob).hexdigest()
     if got != meta["sha256"]:
         raise SystemExit(f"checksum mismatch (expected {meta['sha256']}, got {got}) "
@@ -145,16 +157,27 @@ def main() -> int:
 
     if home is None:
         server, token = registry_config(Path(args.project_root), args.server, args.token)
-        if not (server and token):
+        if not token:
             print(json.dumps({
-                "error": "no engine available locally and the registry is not "
-                         "configured. Provide --server/--token, set "
-                         "WEMUTATE_REGISTRY/WEMUTATE_TOKEN, or run "
-                         "sync.py enable --token …."}), file=sys.stderr)
+                "error": "no engine available locally and no account is "
+                         "configured on this machine",
+                "action": "signup",
+                "hint": "signup.py request --email <you> then "
+                        "signup.py verify --email <you> --code <code> "
+                        "creates a free beta account and saves the token."}),
+                file=sys.stderr)
             return 2
         try:
             home, meta = download(server, token, args.platform, args.python)
         except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                print(json.dumps({
+                    "error": "the registry did not accept this account's "
+                             "token (revoked or expired)",
+                    "action": "signup",
+                    "hint": "re-run the signup flow (signup.py) to refresh "
+                            "the saved token."}), file=sys.stderr)
+                return 2
             print(json.dumps({"error": f"registry {e.code}: {e.reason}"}),
                   file=sys.stderr)
             return 2

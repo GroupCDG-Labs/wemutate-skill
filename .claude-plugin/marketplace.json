@@ -9,7 +9,7 @@
       "source": "./",
       "description": "Multi-language mutation testing: one skill, one vocabulary — Java (Maven/Gradle), JS/TS, C/C++. Built on PiTest, Stryker and Mull.",
       "version": "0.1.0",
-      "license": "MIT"
+      "license": "Proprietary core + MIT skill shell — see LICENSE-PROPRIETARY.md and LICENSE-SKILL.md in the package"
     }
   ]
 }

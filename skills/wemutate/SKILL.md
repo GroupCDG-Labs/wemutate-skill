@@ -18,8 +18,9 @@ pipeline. Engine differences live in adapters; everything the user sees uses
 the same canonical vocabulary (WM Report Format v1).
 
 ```
-detect → resolve engine → doctor → (setup) → run → report --canonical
-       → record state → triage loop → offers (dashboard · PR comment · badge)
+detect → resolve engine (signup on first run) → doctor → (setup) → run
+       → report --canonical → record state → triage loop
+       → offers (dashboard · PR comment · badge)
 ```
 
 ## Hard rules
@@ -65,12 +66,33 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/wemutate/scripts/detect.py [ROOT]
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/wemutate/scripts/resolve_engine.py <adapter>
 ```
 
-Print what was resolved (source, path, sha256) — the same transparency the
-production registry will have. The resolved `wm-engine` executable is used
-for every following step. All adapters share one CLI:
+Print what was resolved (source, path, sha256). On a thin install (no
+bundled engine) this downloads the engine from the production registry,
+SHA-256-verified, cached in `~/.wemutate/engines/` — needs the account from
+Step 2a. The resolved `wm-engine` executable is used for every following
+step. All adapters share one CLI:
 `doctor` · `setup [--apply]` · `run --scope=…` · `report --canonical` ·
 `version` · `licenses` (exit codes: 0 ok, 2 setup required, 3 empty diff,
 4 engine failure, 5 licence required).
+
+## Step 2a — Account (first run on a machine only)
+
+Triggered lazily — only when `resolve_engine.py` or a `wm-engine` step
+reports it (`"action": "signup"` on stderr, or exit code 5):
+
+1. Explain in one line: a free beta account links the engine to the user;
+   nothing about their code is ever sent.
+2. Ask for their email, then:
+   `python3 .../scripts/signup.py request --email <email>`
+3. Say a 6-digit code is in their inbox (expires in 10 minutes) and ask for
+   it, then: `signup.py verify --email <email> --code <code>`
+4. On success the token is saved to `~/.wemutate/credentials.json` — retry
+   the step that asked for it and carry on. Never store or echo the code
+   anywhere else; never ask for a password (there are none).
+
+Exit code 5 on a machine that already has an account means the token was
+revoked or the licence could not be validated — relay the engine's message
+(phrasing in `reference/refusals.md`) and offer to re-run the signup flow.
 
 ## Step 3 — Doctor, then setup if needed
 

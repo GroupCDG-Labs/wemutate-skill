@@ -11,12 +11,12 @@ orchestration scripts (MIT, see `LICENSE`). It's here to be read and audited:
 it's pure orchestration (detect language → resolve engine → run → render) and
 contains **no mutation-testing engine logic**.
 
-It is **not directly installable on its own** — the scripts call a we-mutate
-engine, which is a separate proprietary component the skill downloads on first
-run from the we-mutate registry (matched to your platform, checksum-verified).
-So clone this to *understand* exactly what the skill does; to *use* it, install
-the published plugin (which fetches its engine). The engines under the hood are
-the open source projects [PiTest](https://pitest.org),
+It is also **directly installable** (see Install below). The engine itself is
+a separate proprietary component: on first run the skill signs you up (free
+during the beta — one email, one code) and downloads the engine from the
+we-mutate registry, matched to your platform and SHA-256-verified, cached in
+`~/.wemutate/engines/` so later runs work offline. The engines under the hood
+are the open source projects [PiTest](https://pitest.org),
 [Stryker](https://stryker-mutator.io), [mutmut](https://github.com/boxed/mutmut),
 and [Mull](https://github.com/mull-project/mull).
 
@@ -45,22 +45,25 @@ Plus Claude Code. For Rust, JUnit 4, TestNG, Make/Meson/Bazel, or Android: the s
 
 ## Install
 
-The plugin is built from this repo, then installed from the build output:
+Two commands in Claude Code:
 
-```bash
-python3 tools/build_plugin.py            # assembles dist/wemutate (self-contained)
+```
+/plugin marketplace add GroupCDG-Labs/wemutate-skill
+/plugin install wemutate@wemutate
 ```
 
-Then in Claude Code:
-
-1. Register the built plugin as a marketplace source:
-   `/plugin marketplace add ./dist/wemutate`
-2. Install the plugin from that source:
-   `/plugin install wemutate@wemutate`
+That's it. The first time you ask for a mutation run, the skill sets up your
+free beta account in the conversation (it asks for your email and the 6-digit
+code we send you) and fetches the engine for your platform — about thirty
+seconds, once per machine.
 
 Once installed, the **wemutate** plugin contains the **wemutate** skill, which auto-activates whenever you ask Claude about mutation testing, test quality, or whether your tests would catch bugs. You can also invoke it manually with `/wemutate:wemutate`.
 
-To update after repo changes: rebuild, then `/plugin marketplace update wemutate` and reinstall. To uninstall: `/plugin uninstall wemutate`.
+To update: `/plugin marketplace update wemutate` and reinstall. To uninstall: `/plugin uninstall wemutate`.
+
+> **Platform note (beta):** engine builds are published for macOS arm64 with
+> Python 3.11 first; other platforms are rolling out. If the registry has no
+> build for your platform yet, the skill says so plainly.
 
 ## Usage
 
@@ -78,7 +81,7 @@ The skill auto-invokes when these patterns appear; you don't need to call it by 
 ## How it works
 
 1. `detect.py` finds the build manifests and picks (or asks about) the target.
-2. `resolve_engine.py` resolves the engine adapter for your language and prints what it resolved, with checksum.
+2. `resolve_engine.py` resolves the engine adapter for your language and prints what it resolved, with checksum — downloading it from the registry on first run (`signup.py` creates the account it needs, free during the beta).
 3. The adapter's `doctor` reports project state (toolchain, test framework, existing config, licences). Unsupported setups are refused with a reason and a next step.
 4. If integration is missing, `setup` proposes a build-file diff and waits for your approval.
 5. `run --scope=diff` executes the engine against your changed files only.
@@ -97,7 +100,7 @@ The skill auto-invokes when these patterns appear; you don't need to call it by 
     └── wemutate/                # the skill itself
         ├── SKILL.md             # operating rules + pipeline
         ├── reference/           # on-demand docs (setup, run, triage, tdd, …)
-        └── scripts/             # detect.py, resolve_engine.py, state.py, dashboard.py
+        └── scripts/             # detect.py, resolve_engine.py, signup.py, state.py, dashboard.py
 
 # vendored into the build by tools/build_plugin.py:
 #   wm/ (canonical model library) · spec/ (schema + operator mappings)
@@ -106,7 +109,18 @@ The skill auto-invokes when these patterns appear; you don't need to call it by 
 
 ## Privacy
 
-All analysis runs locally via your build tool and the bundled open source engines. The skill writes `.wemutate/state.json` in your project (add it to `.gitignore` if you want triage state local). Nothing leaves your machine unless you explicitly ask the skill to post a PR comment via your own `gh` auth.
+All analysis runs locally via your build tool and the open source engines. The skill writes `.wemutate/state.json` in your project (add it to `.gitignore` if you want triage state local). **Your source code never leaves your machine.** What does touch the we-mutate service: your email address (signup), and a periodic licence check from the engine — a token validation carrying no project data, cached for a day and tolerant of a week offline. PR comments are posted only when you ask, via your own `gh` auth; portal score sync is separate and opt-in.
+
+## Building from this repo (developers)
+
+The monorepo's build tooling assembles a self-contained plugin — engine bundled, so nothing is downloaded at runtime:
+
+```bash
+python3 tools/build_plugin.py            # assembles dist/wemutate (readable-source wm)
+python3 tools/build_plugin.py --compiled # the shipped variant: native wm module, runtime licence check
+```
+
+then `/plugin marketplace add ./dist/wemutate` and `/plugin install wemutate@wemutate`.
 
 ## Licensing
 

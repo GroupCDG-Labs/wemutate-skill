@@ -52,7 +52,8 @@ def _post(url: str, token: str, body: dict) -> tuple[int, dict]:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(), method="POST",
         headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {token}"})
+                 "Authorization": f"Bearer {token}",
+                 "User-Agent": "wemutate-skill/0.1.0"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.status, json.loads(resp.read())
