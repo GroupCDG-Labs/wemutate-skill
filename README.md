@@ -49,6 +49,9 @@ Two commands in Claude Code:
 
 ```
 /plugin marketplace add GroupCDG-Labs/wemutate-skill
+```
+
+```
 /plugin install wemutate@wemutate
 ```
 

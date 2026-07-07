@@ -5,7 +5,7 @@
 | Exit | Meaning | Skill response |
 |---|---|---|
 | 0 | report produced | proceed to `report --canonical` |
-| 3 | empty diff | **ask** before widening to full — never silent |
+| 3 | empty diff | **ask** before widening to full — never silent, and in plain language (below) |
 | 4 | engine/build failure | show the engine's own diagnostics, offer doctor |
 | 5 | licence required | explain which feature needs it (`reference` in plugin docs) |
 
@@ -33,6 +33,23 @@ Use `state.py delta` for the narrative beneath it when history exists
   configured scope; say so honestly when the project is large. mutmut's
   trampoline design makes full runs fast (one mutated module import, no
   re-collection per mutant).
+
+## The empty-diff ask (exit 3) — plain language, no jargon
+
+The person asking may never have heard of mutation testing. Never say
+"diff", "scope", "widen", or "mutate incrementally" in this question.
+Canonical phrasing for a clean checkout:
+
+> You haven't changed any code since the last commit, so a changes-only
+> check has nothing to look at. Want me to check the whole project
+> instead? It takes longer, but you'll get a baseline of how well your
+> tests would catch real bugs.
+
+Adapt the first sentence to the situation (e.g. uncommitted changes exist
+but in files this target doesn't cover), keep the shape: what happened,
+in plain words → the whole-project offer as a question → what they get
+for the extra time. On a large project, include the time warning here
+rather than after they say yes.
 
 Long runs: warn before anything likely over ~2 minutes (full scopes,
 C++ builds) and say why; offer the smaller scope.

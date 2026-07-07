@@ -36,7 +36,8 @@ detect → resolve engine (signup on first run) → doctor → (setup) → run
    until the user asks.
 4. **Diff-by-default**: never run `--scope=full` without explicit user
    opt-in, every time. Exit code 3 (empty diff) means *ask* — never silently
-   widen scope.
+   widen scope, and phrase the ask in plain language (canonical wording in
+   `reference/run.md`): no "diff"/"scope"/"mutate" jargon in the question.
 5. **Build-file edits need approval**: run `setup` (plan mode), show the
    diff, apply only after an explicit yes.
 6. **Tests must be green before mutating.** A red build makes mutation
