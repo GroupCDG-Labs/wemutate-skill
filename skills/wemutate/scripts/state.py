@@ -104,6 +104,61 @@ def state_path(project_root: Path) -> Path:
     return project_root / ".wemutate" / "state.json"
 
 
+def user_dir() -> Path:
+    """Machine-level we-mutate home (~/.wemutate); WEMUTATE_USER_DIR overrides
+    for tests. Shared with credentials/engine cache."""
+    return Path(os.environ.get("WEMUTATE_USER_DIR") or Path.home() / ".wemutate")
+
+
+def update_registry(root: Path, state: dict) -> None:
+    """Best-effort machine-level project index (~/.wemutate/projects.json) —
+    powers the dashboard's all-projects zoom-out. Stores a snapshot per
+    project path; the dashboard re-reads each project's live state when the
+    directory still exists, so the snapshot only carries deleted/archived
+    projects ("everything I have worked on"). Never fails the caller."""
+    try:
+        history = state.get("score_history", [])
+        triage = state.get("triage", {}).values()
+        latest = history[-1] if history else {}
+        reg_path = user_dir() / "projects.json"
+        reg = {}
+        if reg_path.is_file():
+            try:
+                reg = json.loads(reg_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                reg = {}
+        projects = reg.setdefault("projects", {})
+        key = str(root.resolve())
+        totals = latest.get("totals", {})
+        projects[key] = {
+            "name": state.get("project", {}).get("name") or root.resolve().name,
+            "adapter": latest.get("adapter")
+                       or state.get("project", {}).get("adapter"),
+            "runs": len(history),
+            "first_run_at": (history[0].get("timestamp") if history else None),
+            "last_run_at": latest.get("timestamp"),
+            "targets": sorted({h.get("target", ".") for h in history}),
+            "last_totals": {k: totals.get(k) for k in
+                            ("mutation_score", "test_strength", "found",
+                             "hidden", "uncovered")},
+            "impact": {
+                "bugs_found": sum(e.get("resolution") == "real_bug"
+                                  for e in triage),
+                "test_gaps_closed": sum(e.get("resolution") == "test_gap"
+                                        and e.get("fix_applied")
+                                        for e in triage),
+            },
+        }
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(reg_path.parent), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(reg, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, reg_path)
+    except OSError:
+        pass  # registry is a convenience index; recording must still succeed
+
+
 def load(project_root: Path) -> dict:
     path = state_path(project_root)
     if not path.is_file():
@@ -166,6 +221,7 @@ def cmd_record_run(root: Path, args) -> int:
     state.setdefault("project", {}).setdefault("adapter",
                                                run_doc["run"]["engine"]["adapter"])
     save(root, state)
+    update_registry(root, state)
     print(json.dumps({"recorded": entry["run_id"],
                       "history_length": len(state["score_history"])}))
     return 0
@@ -223,6 +279,7 @@ def cmd_triage(root: Path, args) -> int:
         entry["lines_removed"] = args.lines_removed
     state["triage"][args.wmid] = entry
     save(root, state)
+    update_registry(root, state)  # impact counters feed the zoom-out view
     print(json.dumps({"triaged": args.wmid, "resolution": args.resolution}))
     return 0
 

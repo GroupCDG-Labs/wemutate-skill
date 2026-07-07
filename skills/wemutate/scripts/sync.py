@@ -2,8 +2,11 @@
 """Opt-in sync of run summaries to the we-mutate portal (spec §9.3/§10.3).
 
 What leaves the machine: project name, adapter, run id/timestamp, commit,
-branch, scope, the metric block, the security counts, and the impact
-counters. Never source code, file paths, or mutant fragments — enforced
+branch, scope, the metric block, the security counts, the impact counters,
+and code-free "prevented" events (per closed gap: wmid, resolution, kind,
+severity level, security tag, close date — the portal renders these as
+"Prevented a potential security issue from being deployed"). Never source
+code, file paths, test names, triage notes, or mutant fragments — enforced
 here by constructing the payload from scratch rather than forwarding the
 run document.
 
@@ -104,6 +107,33 @@ def _impact(root: Path) -> dict | None:
     }
 
 
+def _prevented(root: Path, run_doc: dict) -> list[dict] | None:
+    """Code-free what-if events for the portal roll-up: one per closed gap,
+    STRUCTURAL fields only. Deliberately excludes notes, file paths, code
+    lines, and test names — those stay on the machine (data boundary)."""
+    state_file = root / ".wemutate" / "state.json"
+    if not state_file.is_file():
+        return None
+    state = json.loads(state_file.read_text())
+    by_wmid = {m["wmid"]: m for m in run_doc.get("mutants", [])}
+    events = []
+    for wid, e in state.get("triage", {}).items():
+        if not (e.get("resolution") == "real_bug"
+                or (e.get("resolution") == "test_gap" and e.get("fix_applied"))):
+            continue
+        m = by_wmid.get(wid) or {}
+        tags = m.get("security_tags") or []
+        events.append({
+            "wmid": wid,
+            "resolution": e["resolution"],
+            "kind": m.get("kind"),
+            "severity": (m.get("severity") or {}).get("level"),
+            "security_tag": tags[0]["tag"] if tags else None,
+            "closed_at": (e.get("noted_at") or "")[:10] or None,
+        })
+    return events or None
+
+
 def cmd_push(root: Path, args) -> int:
     cfg = _load_cfg(root)
     if not cfg:
@@ -127,6 +157,7 @@ def cmd_push(root: Path, args) -> int:
         "totals": totals,
         "security": security,
         "impact": _impact(root),
+        "prevented": _prevented(root, run_doc),
     }
     status, body = _post(f"{cfg['server']}/v1/runs", cfg["token"], payload)
     print(json.dumps({"status": status, **body}))
