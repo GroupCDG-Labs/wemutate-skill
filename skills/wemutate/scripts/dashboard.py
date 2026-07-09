@@ -7,7 +7,13 @@ Sections: 1 score card · 2 trend · 3 what if? (bugs these tests now prevent)
           4 security panel · 5 per-file strength + top hidden mutants
           6 all projects on this machine · methodology footer
 
+--share writes a snapshot safe to send to someone else: identical except
+section 6 is omitted (it lists every project on this machine — private to
+the machine, not this project). The file stays local either way; sharing
+is the user handing the file over, never an upload.
+
 Usage: dashboard.py --run PATH [--project-root .] [--out .wemutate/dashboard.html]
+       dashboard.py --run PATH --share [--out .wemutate/dashboard-share.html]
 Exit codes: 0 written · 2 bad input
 """
 
@@ -205,7 +211,8 @@ def build_all_projects(current_root: Path) -> str:
             "<th>trend</th><th>last run</th></tr>" + "".join(rows) + "</table>")
 
 
-def build_html(state: dict, run_doc: dict, root: Path = Path(".")) -> str:
+def build_html(state: dict, run_doc: dict, root: Path = Path("."),
+               share: bool = False) -> str:
     totals = run_doc["totals"]
     engine = run_doc["run"]["engine"]
     mutants = run_doc.get("mutants", [])
@@ -289,10 +296,11 @@ def build_html(state: dict, run_doc: dict, root: Path = Path(".")) -> str:
 <table><tr><th>file</th><th>found/total</th><th>strength</th></tr>{file_rows}</table>
 <ul>{top_html}</ul>
 
-<h2>6 · All projects on this machine</h2>
+{"" if share else f'''<h2>6 · All projects on this machine</h2>
 {build_all_projects(root)}
-
+'''}
 <footer>
+{"<p>Shared snapshot — covers this project only.</p>" if share else ""}
 <strong>Methodology.</strong> mutation score = found / (total − equivalent − suppressed);
 test strength = found / covered; timeouts count as found. Subsumption: {subsumption}.
 Incremental: {"yes — " + str(inc.get('reused_results', 0)) + " reused / " + str(inc.get('executed', 0)) + " executed" if inc.get("used") else "no"}.
@@ -308,6 +316,8 @@ def main() -> int:
     ap.add_argument("--run", required=True)
     ap.add_argument("--project-root", default=".")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--share", action="store_true",
+                    help="share-safe snapshot: omit the all-projects section")
     args = ap.parse_args()
     root = Path(args.project_root)
     try:
@@ -318,10 +328,12 @@ def main() -> int:
         return 2
     state_file = root / ".wemutate" / "state.json"
     state = json.loads(state_file.read_text(encoding="utf-8")) if state_file.is_file() else {}
-    out = Path(args.out) if args.out else root / ".wemutate" / "dashboard.html"
+    default_name = "dashboard-share.html" if args.share else "dashboard.html"
+    out = Path(args.out) if args.out else root / ".wemutate" / default_name
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(build_html(state, run_doc, root), encoding="utf-8")
-    print(json.dumps({"written": str(out)}))
+    out.write_text(build_html(state, run_doc, root, share=args.share),
+                   encoding="utf-8")
+    print(json.dumps({"written": str(out), "share": args.share}))
     return 0
 
 

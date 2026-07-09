@@ -162,7 +162,8 @@ are preserved, never dropped.
 ## Step 6 — Offers (never push, always one line)
 
 - **Dashboard**: `scripts/dashboard.py --run /tmp/wm-run.json` → self-contained
-  HTML at `.wemutate/dashboard.html`.
+  HTML at `.wemutate/dashboard.html`. To send to someone else, add `--share`
+  (drops the machine-private all-projects section; `reference/dashboard.md`).
 - **PR comment**: once per branch, idempotent edit-in-place
   (`reference/pr_comment.md`).
 - **TDD micro-loop** when the user is mid red→green cycle

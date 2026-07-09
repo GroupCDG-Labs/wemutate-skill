@@ -2,7 +2,7 @@
 
 ```
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/wemutate/scripts/dashboard.py \
-    --run /tmp/wm-run.json [--project-root .] [--out PATH]
+    --run /tmp/wm-run.json [--project-root .] [--out PATH] [--share]
 ```
 
 Self-contained HTML at `.wemutate/dashboard.html` (no network, no JS deps —
@@ -32,3 +32,16 @@ safe to email or attach). Sections, identical for every adapter:
 Offer it after a run when (a) history has ≥ 2 entries, (b) the user mentions
 reporting/leadership/teams, or (c) a milestone (score crossed a threshold).
 One line: "Want the shareable dashboard? One file, no dependencies."
+
+## Sharing with someone else
+
+When the user wants to *send* the dashboard (a teammate, a report, a bug
+report to us), regenerate with `--share` → `.wemutate/dashboard-share.html`.
+Identical file except section 6 is omitted: that section lists every project
+on the machine, which is private to the machine, not to this project. Tell
+the user the share file covers this project only and that sharing is them
+sending the file — nothing is uploaded anywhere. The full dashboard with the
+all-projects zoom-out stays at `dashboard.html` for their own use. Note the
+share file still contains file paths, mutated code lines, and test names
+from *this* project — they should share it as they would share the code
+itself.

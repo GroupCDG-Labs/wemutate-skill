@@ -25,30 +25,52 @@ import tempfile
 import time
 from pathlib import Path
 
+def _has_engine(p: Path) -> bool:
+    # wm/ is a source dir in development and a compiled native module
+    # (wm.cpython-*.so / wm.pyd) in --compiled distributions.
+    has_wm = (p / "wm").is_dir() or any(p.glob("wm.*.so")) or (p / "wm.pyd").is_file()
+    return has_wm and (p / "adapters").is_dir()
+
+
 def _find_home(start: Path) -> Path:
     """Env override, else nearest ancestor holding wm/ and adapters/ —
-    works in the monorepo (repo root) and the packaged plugin (skills/wemutate/)."""
+    works in the monorepo (repo root) and a bundled plugin (skills/wemutate/).
+    On a thin install neither exists: the marketplace package ships only
+    scripts, and the engine lives in the download cache — fall back to the
+    newest cached engine bundle."""
     env = os.environ.get("WEMUTATE_HOME")
     if env and ((Path(env) / "wm").is_dir() or any(Path(env).glob("wm.*"))):
         return Path(env).resolve()
     p = start.resolve()
     for _ in range(10):
-        # wm/ is a source dir in development and a compiled native module
-        # (wm.cpython-*.so / wm.pyd) in --compiled distributions.
-        has_wm = (p / "wm").is_dir() or any(p.glob("wm.*.so")) or (p / "wm.pyd").is_file()
-        if has_wm and (p / "adapters").is_dir():
+        if _has_engine(p):
             return p
         if p.parent == p:
             break
         p = p.parent
-    raise SystemExit(f"wemutate home not found above {start}; set WEMUTATE_HOME")
+    cache = Path.home() / ".wemutate" / "engines"
+    if cache.is_dir():
+        def _version_key(d: Path):
+            try:
+                return (1, tuple(int(x) for x in d.name.split(".")))
+            except ValueError:
+                return (0, (0,))
+        for cand in sorted((d for d in cache.iterdir() if d.is_dir()),
+                           key=_version_key, reverse=True):
+            if _has_engine(cand):
+                return cand.resolve()
+    raise SystemExit(f"wemutate home not found above {start} and no cached "
+                     f"engine in {cache}; set WEMUTATE_HOME")
 
 
-REPO_ROOT = _find_home(Path(__file__).parent)
-sys.path.insert(0, str(REPO_ROOT))
-
-from wm.migrate import migrate_triage, pitest_resolver  # noqa: E402
-from wm.overlay import apply_state  # noqa: E402
+def _import_wm():
+    """Resolve the engine home and import the wm modules some subcommands
+    need. Deferred so `show`/`delta`/`triage`/`impact` work with no engine
+    installed at all (they only touch .wemutate/state.json)."""
+    sys.path.insert(0, str(_find_home(Path(__file__).parent)))
+    from wm.migrate import migrate_triage, pitest_resolver  # noqa: PLC0415
+    from wm.overlay import apply_state  # noqa: PLC0415
+    return migrate_triage, pitest_resolver, apply_state
 
 RESOLUTIONS = {"test_gap", "real_bug", "dead_code", "equivalent", "suppressed", "deferred"}
 
@@ -197,6 +219,7 @@ def cmd_record_run(root: Path, args) -> int:
     # Fold triage resolutions + cleared security tags into the doc so the
     # recorded scores reflect them (spec §4.5), then write the overlaid doc
     # back so every later consumer (scorebox, dashboard) sees the same data.
+    _, _, apply_state = _import_wm()
     run_doc = apply_state(run_doc, state)
     Path(args.run).write_text(json.dumps(run_doc, indent=2) + "\n",
                               encoding="utf-8")
@@ -334,6 +357,7 @@ def cmd_impact(root: Path, _args) -> int:
 
 def cmd_migrate(root: Path, args) -> int:
     legacy = json.loads(Path(args.legacy).read_text(encoding="utf-8"))
+    migrate_triage, pitest_resolver, _ = _import_wm()
     resolve = pitest_resolver(args.mutations_xml, args.source_root)
     migrated = migrate_triage(legacy, resolve)
     state = load(root)

@@ -55,7 +55,10 @@ Two commands in Claude Code:
 /plugin install wemutate@wemutate
 ```
 
-That's it. The first time you ask for a mutation run, the skill sets up your
+Then restart Claude Code (exit and start it again) — the skill is picked up
+on the next session.
+
+The first time you ask for a mutation run, the skill sets up your
 free beta account in the conversation (it asks for your email and the 6-digit
 code we send you) and fetches the engine for your platform — about thirty
 seconds, once per machine.
